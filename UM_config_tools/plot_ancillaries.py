@@ -1,8 +1,18 @@
 import matplotlib.pyplot as plt
 import xarray as xr
+import os
+from pathlib import Path
+import ants
+import warnings
+import textwrap
+import iris
+
+# These ancillaries have a land-sea mask (i.e. ocean regions are already full of NaNs)
+LAND_FILE_TYPES= ['soil', 'veg', 'hydtop','MORUSES' ] 
 
 def plot_ancils(region,
                 files,
+                lsm_mask,
                 num_plots,
                 plot=True,
                 num_columns=4,
@@ -56,9 +66,9 @@ def plot_ancils(region,
             all_mask = da.isnull()
             
             # Check if this ancillary already has a land-sea mask
-            if any(t in str(file) for t in land_file_types):
+            if any(t in str(file) for t in LAND_FILE_TYPES):
                 # Remove the ocean from the NaN search
-                all_mask = lsm_masks[region] & da.isnull()
+                all_mask = lsm_mask & da.isnull()
         
             if all_mask.compute().sum() > 0:   
                 print (f'ERROR : NaNs identified in {cube.name()},{file.name}')
@@ -90,7 +100,7 @@ def plot_ancils(region,
     fig.suptitle(f'Ancillary parameter fields for {region}',fontsize=20,y=1.0)
     plt.tight_layout()
 
-    return nan_fields
+    return nan_fields,fig
 
 
 
