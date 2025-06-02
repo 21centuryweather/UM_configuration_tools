@@ -52,4 +52,4 @@ export PATH=/g/data/hr22/apps/cylc7/rose_2019.01.8/bin:/g/data/vk83/apps/conda/a
 
 
 #hres_eccb --mask $MASK --file $ECCBFILE --start $START --type $TYPE
-#python /g/data/vk83/apps/conda/access-ram/2025.03.0/lib/python3.11/site-packages/replace_landsurface/hres_eccb.py --mask $MASK --file $ECCBFILE --start $START --type $TYPE
+#python hres_eccb.py --mask $MASK --file $ECCBFILE --start $START --type $TYPE
