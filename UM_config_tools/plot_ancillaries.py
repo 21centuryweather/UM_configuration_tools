@@ -80,7 +80,8 @@ def plot_ancils(region,
                 cb_args = {'label': label}
             else:
                 cb_args = {'label':da.attrs['STASH']}
-
+                #print (f"DEBUG: {cube} {da.attrs['STASH']}")
+                #print (f"DEBUG: {cube} {len(da.attrs['STASH'])}")
             # Plot according to specified lat/lon ranges
             if lat_range and lon_range:
                 da.sel(latitude=slice(lat_range[0],lat_range[1]),
