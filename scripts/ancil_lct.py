@@ -48,6 +48,9 @@ import json
 import os
 import warnings
 
+import sys
+sys.path.append('/home/548/pag548/cylc-run/u-dq487/share/fcm_make_ants/build/lib')
+
 import ants
 import ants.decomposition as decomp
 import ants.fileformats.cover_mapping as cover_mapping
