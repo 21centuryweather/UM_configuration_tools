@@ -8,7 +8,7 @@ module use ~access/modules
 module use /g/data/access/ngm/modules
 module load cap/9.2
 #module load /g/data/access/ngm/modules/analysis3/23.07
-module module use /g/data/xp65/public/module
+module use /g/data/xp65/public/modules
 module load conda/analysis3
 
 export CYLC_SUITE_RUN_DIR="/home/548/pag548/cylc-run/u-dg767"
