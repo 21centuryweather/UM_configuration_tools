@@ -23,8 +23,8 @@ def add_options(parser):
 
 if __name__ == '__main__':
 
-    parser = ArgumentParser()
-    add_options(parser)
+    #parser = ArgumentParser()
+    #add_options(parser)
     
     if len(sys.argv) == 1:
         print (" INFO : No input data supplied.")
@@ -32,9 +32,11 @@ if __name__ == '__main__':
         parser.print_help()
         sys.exit()
 
-    args = parser.parse_args()
+    #args = parser.parse_args()
 
-    input_file = '~/cylc-run/u-dq126/work/20220226T0000Z/Flagship_ERA5to1km_1km_RAL3P2_um_fcst_000/ioserver_log.00023'
+    #input_file = '~/cylc-run/u-dq126/work/20220226T0000Z/Flagship_ERA5to1km_1km_RAL3P2_um_fcst_000/ioserver_log.00023'
+
+    # Let's plot all log files
 
     INPUT_DIR=Path('/home/548/pag548/cylc-run/u-dq126/work/20220226T0000Z/Flagship_ERA5to1km_1km_RAL3P2_um_fcst_000/')
 
