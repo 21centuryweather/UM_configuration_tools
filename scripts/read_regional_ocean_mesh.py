@@ -85,40 +85,10 @@ def create_atmos_mask(bounds, resolution):
         print ('ERROR : Change resolution to ensure an even number of points within your ocean mesh bounds' )
         sys.exit(1)
 
-    # Create connectivity list
-    # The mesh has (N_LON_NODES - 1) * (N_LAT_NODES - 1) elements
-    N_ELEMENTS_LON = N_LON_NODES - 1
-    N_ELEMENTS_LAT = N_LAT_NODES - 1
-    N_ELEMENTS = N_ELEMENTS_LON * N_ELEMENTS_LAT
-
-    connectivity = []
-    
-    # Loop over all elements in the mesh (rows 'r' and columns 'c')
-    for r in range(N_ELEMENTS_LAT): # Element row index (0 to N_LAT_NODES - 2)
-        for c in range(N_ELEMENTS_LON): # Element column index (0 to N_LON_NODES - 2)
-            
-            # The node index of the bottom-left corner (BL) of the current element (c, r)
-            # Node indices are calculated in Row-Major order (row * width + col)
-            BL = r * N_LON_NODES + c
-            
-            # Define the four nodes of the element in Counter-Clockwise (CCW) order:
-            # BL: Bottom-Left (r, c)
-            # BR: Bottom-Right (r, c+1)
-            # TR: Top-Right (r+1, c+1)
-            # TL: Top-Left (r+1, c)
-            
-            BR = BL + 1
-            TR = BL + N_LON_NODES + 1
-            TL = BL + N_LON_NODES
-            
-            # Append the indices for the current element
-            connectivity.extend([BL, BR, TR, TL])
-
-    element_to_node_conn = np.array(connectivity, dtype=np.int32)
-
-
+    # Build 
+    atm_grid = build_grid(bounds, atm_res)
     # Temp array - will regrid the ocean land/sea mask in due course
-    data = np.ones([len(lat_coords),len(lon_coords)])
+    
 
     da =  xr.DataArray(
         data,
@@ -136,79 +106,38 @@ def create_atmos_mask(bounds, resolution):
     return da
 
 
-def build_mesh(lat_coords, lon_coords):
+def build_grid(bounds, nlat):
     """
-    Build an esmpy (ESMF) mesh object in memory
+    Build an esmpy (ESMF) grid object in memory using Kieran's method at https://gist.github.com/kieranricardo/eb98f76235255efff800d28c2442e5c3
     """
-    N_LAT_NODES = len(lat_coords)
-    N_LON_NODES = len(lon_coords)
+    nlon = nlat
+    lon0, lon1 = bounds['lon_min'],bounds['lon_max']
+    lat0, lat1 = bounds['lat_min'],bounds['lat_max']
 
-    nx = N_LON_NODES-1 #No of cells
-    ny = N_LAT_NODES-1
+    max_index = np.array([nlon, nlat])
+    grid = esmpy.Grid(max_index, num_peri_dims=1, staggerloc=[esmpy.StaggerLoc.CENTER])
 
-    x = lon_coords
-    y = lat_coords
+    dlat = (lat1 - lat0) / nlat
+    lat = (np.arange(nlat) * dlat) + lat0 + 0.5 * dlat
 
-    # Total number of nodes
-    num_nodes = (nx + 1) * (ny + 1)
-    # Total number of quads
-    num_elems = nx * ny
+    dlon = (lon1 - lon0) / nlon
+    lon = (np.arange(nlon) * dlon) + lon0 + 0.5 * dlon
 
-    # Create 2D coordinate arrays
-    xv, yv = np.meshgrid(x, y, indexing='xy')
+    grid.get_coords(0)[:] = lon[:, None]
+    grid.get_coords(1)[:] = lat[None, :]
 
-    # Flatten to 1D for ESMF
-    nodeCoord = np.vstack([xv.flatten(), yv.flatten()]).T
+    # corner 
+    grid.add_coords([esmpy.StaggerLoc.CORNER])
 
-    # Node IDs (1-based indexing)
-    nodeId = np.arange(1, num_nodes + 1, dtype=np.int32)
-    # Single process ownership (for parallel runs you'd set per-rank)
-    nodeOwner = np.zeros(num_nodes, dtype=np.int32)
+    grid_lon_corner = grid.get_coords(0, staggerloc=esmpy.StaggerLoc.CORNER)
+    grid_lat_corner = grid.get_coords(1, staggerloc=esmpy.StaggerLoc.CORNER)
 
-    elemId = np.arange(1, num_elems + 1, dtype=np.int32)
-    elemType = np.full(num_elems, esmpy.MeshElemType.QUAD, dtype=np.int32)
+    grid_lon_corner[:] = lon[:, None] - 0.5 * dlon
+    grid_lat_corner[:, :-1] = lat[None, :] - 0.5 * dlat
+    grid_lat_corner[:, -1] = 90.0
 
-    elemConn = []
-    for j in range(ny):
-        for i in range(nx):
-            n0 = j * (nx + 1) + i
-            n1 = n0 + 1
-            n2 = n0 + nx + 2
-            n3 = n0 + nx + 1
-            elemConn.extend([n0, n1, n2, n3])
-    elemConn = np.array(elemConn, dtype=np.int32)
+    return grid, lat, lon
 
-
-    # Initialize ESMF
-    mgr = esmpy.Manager(debug=True)
-
-    # Create a Mesh with 2D parametric and spatial dimensions
-    mesh = esmpy.Mesh(parametric_dim=2, spatial_dim=2)
-
-    # Add nodes
-    mesh.add_nodes(
-        node_count=num_nodes,
-        node_ids=nodeId,
-        node_coords=nodeCoord,
-        node_owners=nodeOwner
-    )
-
-    # Add elements (cells)
-    mesh.add_elements(
-        num_elem=num_elems,
-        elemId=elemId,
-        elemType=elemType,
-        elemConn=elemConn
-    )
-
-    print(f"Mesh created: {mesh.size[esmpy.MeshLoc.NODE]} nodes, {mesh.size[esmmpy.MeshLoc.ELEM]} elements.")
-
-
-def regrid_land_sea_mask(ocn_mesh, ocn_mask, atm_da):
-    """
-    Read in the ocean mesh, ocean land/sea mask and the atmospheric mesh defined as a dataarray
-    Create an atmospheric mesh object and then regrid the ocean land/sea mask onto the atmospheric mesh.
-    """
 
 
 if __name__ == "__main__":
@@ -227,5 +156,56 @@ if __name__ == "__main__":
     ocean_file = args.ocean_file
     atm_res = float(args.atm_res)
 
+    out_fp = 'dummy.nc'
+    nlat=26
+    nlon=nlat
     ocn_mesh, ocn_mask, bounds = load_ocn_data(ocean_file)
-    atm_da = create_atmos_mask(bounds, atm_res)
+    atm_grid, lats, lons = build_grid(bounds, nlat)
+
+    atm_field = esmpy.Field(atm_grid, meshloc=esmpy.api.constants.MeshLoc.ELEMENT)
+    atm_field.data[:] = 0.0    
+
+    ocn_field = esmpy.Field(ocn_mesh, meshloc=esmpy.api.constants.MeshLoc.ELEMENT)
+    ocn_field.data[:] = ocn_mask
+
+    ocn_to_atm_cons = esmpy.api.regrid.Regrid(
+      ocn_field, atm_field, 
+      unmapped_action=esmpy.api.constants.UnmappedAction.IGNORE,
+      regrid_method=esmpy.api.constants.RegridMethod.CONSERVE,
+      norm_type=esmpy.api.constants.NormType.DSTAREA, factors=True
+    )
+
+    new_ocn_frac = atm_field.data.reshape((nlat, nlon))
+
+    new_land_frac = 1.0 - new_ocn_frac
+
+    new_land_frac[new_land_frac < 0.01] = 0.0
+    new_land_frac[new_land_frac > 1.0] = 1.0
+
+    lat_coord = xr.DataArray(
+      dims=['lat'],
+      coords=dict(lat=lats),
+      data=lats,
+      attrs=dict(standard_name='latitude', units='degrees_north')
+    )
+
+    lon_coord = xr.DataArray(
+      dims=['lon'],
+      coords=dict(lon=lons),
+      data=lons,
+      attrs=dict(standard_name='longitude', units='degrees_east')
+     )
+
+    da = xr.DataArray(
+    data=new_land_frac,
+    dims=["lat", "lon"],
+    coords=dict(
+        lat=lats,
+        lon=lons,
+    ),
+    attrs=dict(um_stash_source='m01s00i505')
+    )
+
+    ds = xr.Dataset(dict(landfrac=da))
+
+    ds.to_netcdf(out_fp)
