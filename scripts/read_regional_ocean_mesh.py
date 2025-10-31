@@ -60,7 +60,7 @@ def get_bounds(ocn_ds):
 
     return bounds
 
-def create_atmos_mask(bounds, resolution):
+def create_atmos_mask(bounds, resolution, mygrid=True):
     """
     Create a atmospheric land/sea dataarray within the given bounds at the desired resolution
     The mesh must have an even number of points.
@@ -86,10 +86,11 @@ def create_atmos_mask(bounds, resolution):
         sys.exit(1)
 
     # Build 
-    atm_grid = build_grid(bounds, atm_res)
-    # Temp array - will regrid the ocean land/sea mask in due course
-    
-
+    if mygrid:
+        atm_grid = build_my_grid(lat_coords, lon_coords)
+    else:
+        atm_grid = build_grid(bounds, atm_res)
+   
     da =  xr.DataArray(
         data,
         coords={
@@ -106,7 +107,7 @@ def create_atmos_mask(bounds, resolution):
     return da
 
 
-def build_grid(bounds, nlat):
+def build_grid(lat_coords, lon_coords):
     """
     Build an esmpy (ESMF) grid object in memory using Kieran's method at https://gist.github.com/kieranricardo/eb98f76235255efff800d28c2442e5c3
     """
@@ -139,26 +140,58 @@ def build_grid(bounds, nlat):
     return grid, lat, lon
 
 
+def build_my_grid(bounds, resolution):
+    """
+    Build an esmpy (ESMF) grid object in memory co-ords which align with the edge of the MOM6 mesh
 
-if __name__ == "__main__":
+    """
+    epsilon = 1e-9 
 
-    parser = ArgumentParser()
-    add_options(parser)
+    lat = np.arange(bounds['lat_min'], bounds['lat_max'] + resolution - epsilon, resolution)
 
-    if len(sys.argv) == 1:
-        print (" INFO : No input data supplied.")
-        print (" INFO : usage: python %prog [options].")
-        parser.print_help()
-        sys.exit()
+    dlat = resolution   
+    dlon = dlat
 
-    args = parser.parse_args()
+    nlat = len(lat)
 
-    ocean_file = args.ocean_file
-    atm_res = float(args.atm_res)
+    if nlat % 2 != 0:
+        print (f'ERROR : Number of atmospheric latitude points is {nlat}')
+        print ('ERROR : Change resolution to ensure an even number of points within your ocean mesh bounds' )
+        sys.exit(1)
 
-    out_fp = 'dummy.nc'
-    nlat=26
-    nlon=nlat
+    lon = np.arange(bounds['lon_min'], bounds['lon_max'] + resolution - epsilon, resolution)
+
+    nlon = len(lon)
+
+    if nlon % 2 != 0:
+        print (f'ERROR : Number of atmospheric longitude points is {nlon}')
+        print ('ERROR : Change resolution to ensure an even number of points within your ocean mesh bounds' )
+        sys.exit(1)
+
+    max_index = np.array([nlon, nlat])
+    grid = esmpy.Grid(max_index, num_peri_dims=1, staggerloc=[esmpy.StaggerLoc.CENTER])
+
+    grid.get_coords(0)[:] = lon[:, None]
+    grid.get_coords(1)[:] = lat[None, :]
+
+    # corner 
+    grid.add_coords([esmpy.StaggerLoc.CORNER])
+
+    grid_lon_corner = grid.get_coords(0, staggerloc=esmpy.StaggerLoc.CORNER)
+    grid_lat_corner = grid.get_coords(1, staggerloc=esmpy.StaggerLoc.CORNER)
+
+    grid_lon_corner[:] = lon[:, None] - 0.5 * dlon
+    grid_lat_corner[:, :-1] = lat[None, :] - 0.5 * dlat
+    grid_lat_corner[:, -1] = 90.0
+    
+    return grid, lat, lon
+
+
+def regrid(atm_grid, ocn_mesh, ocn_mask, nlat, nlon, lats, lons):
+    """
+    Use the ESMF regridder to grid the ocn_mask onto the 
+    atm_grid
+    """
     ocn_mesh, ocn_mask, bounds = load_ocn_data(ocean_file)
     atm_grid, lats, lons = build_grid(bounds, nlat)
 
@@ -177,11 +210,7 @@ if __name__ == "__main__":
 
     new_ocn_frac = atm_field.data.reshape((nlat, nlon))
 
-    new_land_frac = 1.0 - new_ocn_frac
-
-    new_land_frac[new_land_frac < 0.01] = 0.0
-    new_land_frac[new_land_frac > 1.0] = 1.0
-
+    # Output to array
     lat_coord = xr.DataArray(
       dims=['lat'],
       coords=dict(lat=lats),
@@ -197,7 +226,7 @@ if __name__ == "__main__":
      )
 
     da = xr.DataArray(
-    data=new_land_frac,
+    data=new_ocn_frac,
     dims=["lat", "lon"],
     coords=dict(
         lat=lats,
@@ -208,4 +237,37 @@ if __name__ == "__main__":
 
     ds = xr.Dataset(dict(landfrac=da))
 
+    return ds
+
+
+if __name__ == "__main__":
+
+    parser = ArgumentParser()
+    add_options(parser)
+
+    if len(sys.argv) == 1:
+        print (" INFO : No input data supplied.")
+        print (" INFO : usage: python %prog [options].")
+        parser.print_help()
+        sys.exit()
+
+    args = parser.parse_args()
+
+    ocean_file = args.ocean_file
+    atm_res = float(args.atm_res)
+
+    out_fp = 'dummy_kieran.nc'
+    nlat=26
+    nlon=nlat
+
+    ocn_mesh, ocn_mask, bounds = load_ocn_data(ocean_file)
+    atm_grid, lats, lons = build_grid(bounds, nlat)
+    ds = regrid(atm_grid, ocn_mesh, ocn_mask, nlat, nlon, lats, lons)
+    ds.to_netcdf(out_fp)
+
+    my_atm_grid, lats, lons = build_my_grid(bounds, nlat)
+    ds = regrid(my_atm_grid, ocn_mesh, ocn_mask, nlat, nlon, lats,
+    lons)
+
+    out_fp = 'dummy_paul.nc'
     ds.to_netcdf(out_fp)
