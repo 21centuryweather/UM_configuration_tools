@@ -5,6 +5,8 @@ import numpy as np
 from argparse import ArgumentParser
 import os
 import sys
+import matplotlib.pyplot as plt
+import cartopy.crs as ccrs
 
 def add_options(parser):
     """
@@ -59,6 +61,7 @@ def get_bounds(ocn_ds):
                'lon_max' : lons.max() }
 
     return bounds
+
 
 def create_atmos_mask(bounds, resolution, mygrid=True):
     """
@@ -257,7 +260,7 @@ if __name__ == "__main__":
     atm_res = float(args.atm_res)
 
     out_fp = 'dummy_kieran.nc'
-    nlat=26
+    nlat=200
     nlon=nlat
 
     ocn_mesh, ocn_mask, bounds = load_ocn_data(ocean_file)
@@ -271,3 +274,89 @@ if __name__ == "__main__":
 
     out_fp = 'dummy_paul.nc'
     ds.to_netcdf(out_fp)
+
+    # Load in for visualisation
+    ESMF_mesh = xr.load_dataset(ocean_file)
+    ocean_mask = xr.open_dataset('/g/data/gb02/pag548/ocean-config-for-rcm3-dev/input/tiny-ocean-rcm3-dev/ocean_mask.nc')
+   
+    nx = len(ocean_mask.nx)
+    ny = len(ocean_mask.ny)
+
+    ESMF_mask = xr.DataArray(ESMF_mesh.elementMask.values.reshape(ny,nx), 
+                dims=['ny','nx'],
+                coords={'ny':ocean_mask.ny, 
+                        'nx':ocean_mask.nx})
+                        
+    bathym = xr.open_dataset('/g/data/gb02/pag548/ocean-config-for-rcm3-dev/input/tiny-ocean-rcm3-dev/bathymetry.nc')
+
+    hgrid = xr.open_dataset('/g/data/gb02/pag548/ocean-config-for-rcm3-dev/input/tiny-ocean-rcm3-dev/hgrid.nc')
+
+    # To extract lat/lons from the hgrid (Madi's method)
+    # --- MOM6 native mask 
+    # Mask is defined at T-cell centers. Lat/lon at these points can be extracted from hgrid:
+    geo_lon_t = hgrid.x[1::2,1::2]
+    geo_lat_t = hgrid.y[1::2,1::2]
+
+    ESMF_lat = xr.DataArray(ESMF_mesh.centerCoords[:, 1].values.reshape(ny,nx), 
+                            dims=['ny','nx'],
+                            coords={'ny':ocean_mask.ny, 
+                                    'nx':ocean_mask.nx})
+
+    ESMF_lon = xr.DataArray(ESMF_mesh.centerCoords[:, 0].values.reshape(ny,nx), 
+                            dims=['ny','nx'],
+                            coords={'ny':ocean_mask.ny, 
+                                    'nx':ocean_mask.nx})
+
+    ESMF_ds = xr.Dataset({
+        'mask': ESMF_mask,
+        'geo_lat_t':  ESMF_lat,
+        'geo_lon_t':  ESMF_lon
+    })
+
+    # Plot these T cell centres using pcolormesh
+    fig,ax=plt.subplots(1,1)
+    p1 = ax.pcolormesh(ESMF_ds.geo_lon_t, ESMF_ds.geo_lat_t, ESMF_ds.mask, shading='auto', vmin = 0, vmax = 1, edgecolors='black')
+    fig.colorbar(p1, ax=ax, orientation='vertical', label='Ocean mask ESMF')
+
+    # Now for gemini solution
+    # https://gemini.google.com/share/aa910f049570
+
+    nodeCoords = ESMF_mesh.nodeCoords.data
+
+    # Find the min and max 
+    lon = nodeCoords[:,0]
+    lat = nodeCoords[:,1]
+
+    elementConn = ESMF_mesh.elementConn.values
+    elementMask = ESMF_mesh.elementMask.values
+
+    elementConn_0based = elementConn - 1
+
+    tri1 = elementConn_0based[:, [0, 1, 2]]
+    tri2 = elementConn_0based[:, [0, 2, 3]]
+
+    # Stack the new triangles
+    triangles = np.vstack([tri1, tri2])
+
+    # Duplicate the mask data for the new set of triangles
+    facecolors = np.hstack([elementMask, elementMask])
+
+    # 2. Set up the Cartopy GeoAxes
+    fig = plt.figure(figsize=(8, 6))
+    ax = fig.add_subplot(1, 1, 1, projection=ccrs.PlateCarree()) # Or another projection
+
+    plot = ax.tripcolor(
+    lon,                       # X-coordinates (Longitude) of the nodes
+    lat,                       # Y-coordinates (Latitude) of the nodes
+    triangles=triangles,       # Connectivity matrix for the triangles
+    facecolors=facecolors,     # Data defined at the element center (mask values)
+    cmap='viridis',            # Custom land/sea colormap
+    vmin=0, vmax=1,            # Set min/max for the colormap to ensure 0 and 1 are covered
+    edgecolors='lightgray',         # 'k' or 'lightgray' to show grid lines
+    transform=ccrs.PlateCarree() # Specify the coordinate system of the input data
+    )
+
+    # Plot lat/lon axes
+    gl = ax.gridlines(crs=ccrs.PlateCarree(), draw_labels=True,
+                  linewidth=1, color='gray', alpha=0.5, linestyle='--')
+ 
