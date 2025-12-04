@@ -10,7 +10,7 @@ if 'ESMFMKFILE' not in os.environ:
     os.environ['ESMFMKFILE'] = '/opt/conda/analysis3-25.09/lib/esmf.mk'
 
 import esmpy
-
+esmpy.Manager(debug=True)
 
 def add_options(parser):
     """
