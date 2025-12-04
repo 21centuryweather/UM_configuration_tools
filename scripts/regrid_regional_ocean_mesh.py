@@ -1,10 +1,16 @@
 #!/usr/bin/env python
-import esmpy
+
 import xarray as xr
 import numpy as np
 from argparse import ArgumentParser
 import os
 import sys
+
+if 'ESMFMKFILE' not in os.environ:
+    os.environ['ESMFMKFILE'] = '/opt/conda/analysis3-25.09/lib/esmf.mk'
+
+import esmpy
+
 
 def add_options(parser):
     """
@@ -60,54 +66,8 @@ def get_bounds(ocn_ds):
 
     return bounds
 
-def create_atmos_mask(bounds, resolution, mygrid=True):
-    """
-    Create a atmospheric land/sea dataarray within the given bounds at the desired resolution
-    The mesh must have an even number of points.
-    """
-    epsilon = 1e-9 
 
-    lat_coords = np.arange(bounds['lat_min'], bounds['lat_max'] + resolution - epsilon, resolution)
-
-    N_LAT_NODES = len(lat_coords)
-
-    if N_LAT_NODES % 2 != 0:
-        print (f'ERROR : Number of atmospheric latitude points is {N_LAT_NODES}')
-        print ('ERROR : Change resolution to ensure an even number of points within your ocean mesh bounds' )
-        sys.exit(1)
-
-    lon_coords = np.arange(bounds['lon_min'], bounds['lon_max'] + resolution - epsilon, resolution)
-
-    N_LON_NODES = len(lon_coords)
-
-    if N_LON_NODES % 2 != 0:
-        print (f'ERROR : Number of atmospheric longitude points is {N_LON_NODES}')
-        print ('ERROR : Change resolution to ensure an even number of points within your ocean mesh bounds' )
-        sys.exit(1)
-
-    # Build 
-    if mygrid:
-        atm_grid = build_my_grid(lat_coords, lon_coords)
-    else:
-        atm_grid = build_grid(bounds, atm_res)
-   
-    da =  xr.DataArray(
-        data,
-        coords={
-            'lat': lat_coords,
-            'lon': lon_coords
-        },
-        dims=['lat', 'lon'],
-        name='land_binary_mask',
-        attrs={
-            'description': 'MOM6 land/sea mask regridded to atmospheric resolution'
-        }
-    )
-
-    return da
-
-
-def build_grid(lat_coords, lon_coords):
+def build_grid(bounds, nlat):
     """
     Build an esmpy (ESMF) grid object in memory using Kieran's method at https://gist.github.com/kieranricardo/eb98f76235255efff800d28c2442e5c3
     """
@@ -193,7 +153,6 @@ def regrid(atm_grid, ocn_mesh, ocn_mask, nlat, nlon, lats, lons):
     atm_grid
     """
     ocn_mesh, ocn_mask, bounds = load_ocn_data(ocean_file)
-    atm_grid, lats, lons = build_grid(bounds, nlat)
 
     atm_field = esmpy.Field(atm_grid, meshloc=esmpy.api.constants.MeshLoc.ELEMENT)
     atm_field.data[:] = 0.0    
@@ -265,9 +224,9 @@ if __name__ == "__main__":
     ds = regrid(atm_grid, ocn_mesh, ocn_mask, nlat, nlon, lats, lons)
     ds.to_netcdf(out_fp)
 
-    my_atm_grid, lats, lons = build_my_grid(bounds, nlat)
-    ds = regrid(my_atm_grid, ocn_mesh, ocn_mask, nlat, nlon, lats,
+    my_atm_grid, lats, lons = build_my_grid(bounds, atm_res)
+    my_ds = regrid(my_atm_grid, ocn_mesh, ocn_mask, nlat, nlon, lats,
     lons)
 
     out_fp = 'dummy_paul.nc'
-    ds.to_netcdf(out_fp)
+    my_ds.to_netcdf(out_fp)
