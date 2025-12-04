@@ -5,8 +5,6 @@ import numpy as np
 from argparse import ArgumentParser
 import os
 import sys
-import matplotlib.pyplot as plt
-import cartopy.crs as ccrs
 
 def add_options(parser):
     """
@@ -62,8 +60,54 @@ def get_bounds(ocn_ds):
 
     return bounds
 
+def create_atmos_mask(bounds, resolution, mygrid=True):
+    """
+    Create a atmospheric land/sea dataarray within the given bounds at the desired resolution
+    The mesh must have an even number of points.
+    """
+    epsilon = 1e-9 
 
-def build_grid(bounds, nlat):
+    lat_coords = np.arange(bounds['lat_min'], bounds['lat_max'] + resolution - epsilon, resolution)
+
+    N_LAT_NODES = len(lat_coords)
+
+    if N_LAT_NODES % 2 != 0:
+        print (f'ERROR : Number of atmospheric latitude points is {N_LAT_NODES}')
+        print ('ERROR : Change resolution to ensure an even number of points within your ocean mesh bounds' )
+        sys.exit(1)
+
+    lon_coords = np.arange(bounds['lon_min'], bounds['lon_max'] + resolution - epsilon, resolution)
+
+    N_LON_NODES = len(lon_coords)
+
+    if N_LON_NODES % 2 != 0:
+        print (f'ERROR : Number of atmospheric longitude points is {N_LON_NODES}')
+        print ('ERROR : Change resolution to ensure an even number of points within your ocean mesh bounds' )
+        sys.exit(1)
+
+    # Build 
+    if mygrid:
+        atm_grid = build_my_grid(lat_coords, lon_coords)
+    else:
+        atm_grid = build_grid(bounds, atm_res)
+   
+    da =  xr.DataArray(
+        data,
+        coords={
+            'lat': lat_coords,
+            'lon': lon_coords
+        },
+        dims=['lat', 'lon'],
+        name='land_binary_mask',
+        attrs={
+            'description': 'MOM6 land/sea mask regridded to atmospheric resolution'
+        }
+    )
+
+    return da
+
+
+def build_grid(lat_coords, lon_coords):
     """
     Build an esmpy (ESMF) grid object in memory using Kieran's method at https://gist.github.com/kieranricardo/eb98f76235255efff800d28c2442e5c3
     """
@@ -72,7 +116,7 @@ def build_grid(bounds, nlat):
     lat0, lat1 = bounds['lat_min'],bounds['lat_max']
 
     max_index = np.array([nlon, nlat])
-    grid = esmpy.Grid(max_index, num_peri_dims=0, staggerloc=[esmpy.StaggerLoc.CENTER])
+    grid = esmpy.Grid(max_index, num_peri_dims=1, staggerloc=[esmpy.StaggerLoc.CENTER])
 
     dlat = (lat1 - lat0) / nlat
     lat = (np.arange(nlat) * dlat) + lat0 + 0.5 * dlat
@@ -89,9 +133,9 @@ def build_grid(bounds, nlat):
     grid_lon_corner = grid.get_coords(0, staggerloc=esmpy.StaggerLoc.CORNER)
     grid_lat_corner = grid.get_coords(1, staggerloc=esmpy.StaggerLoc.CORNER)
 
-    #grid_lon_corner[:] = lon[:, None] - 0.5 * dlon
-    #grid_lat_corner[:, :-1] = lat[None, :] - 0.5 * dlat
-    #grid_lat_corner[:, -1] = 90.0
+    grid_lon_corner[:] = lon[:, None] - 0.5 * dlon
+    grid_lat_corner[:, :-1] = lat[None, :] - 0.5 * dlat
+    grid_lat_corner[:, -1] = 90.0
 
     return grid, lat, lon
 
@@ -148,6 +192,8 @@ def regrid(atm_grid, ocn_mesh, ocn_mask, nlat, nlon, lats, lons):
     Use the ESMF regridder to grid the ocn_mask onto the 
     atm_grid
     """
+    ocn_mesh, ocn_mask, bounds = load_ocn_data(ocean_file)
+    atm_grid, lats, lons = build_grid(bounds, nlat)
 
     atm_field = esmpy.Field(atm_grid, meshloc=esmpy.api.constants.MeshLoc.ELEMENT)
     atm_field.data[:] = 0.0    
@@ -210,28 +256,18 @@ if __name__ == "__main__":
     ocean_file = args.ocean_file
     atm_res = float(args.atm_res)
 
-    # Start with Kieran's supplied algorithm, which requires the number
-    # of points
-
     out_fp = 'dummy_kieran.nc'
     nlat=26
     nlon=nlat
 
     ocn_mesh, ocn_mask, bounds = load_ocn_data(ocean_file)
     atm_grid, lats, lons = build_grid(bounds, nlat)
-
     ds = regrid(atm_grid, ocn_mesh, ocn_mask, nlat, nlon, lats, lons)
     ds.to_netcdf(out_fp)
-  
-    # Repeat with my algorithm which requires an input resolution 
-    # which replicates the existing UM regional ancil suite
-    
-    my_atm_grid, lats, lons = build_my_grid(bounds, atm_res)
-    nlat = len(lats)
-    nlon = len(lons)
+
+    my_atm_grid, lats, lons = build_my_grid(bounds, nlat)
     ds = regrid(my_atm_grid, ocn_mesh, ocn_mask, nlat, nlon, lats,
     lons)
 
     out_fp = 'dummy_paul.nc'
     ds.to_netcdf(out_fp)
-
