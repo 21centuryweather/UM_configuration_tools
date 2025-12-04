@@ -89,9 +89,9 @@ def build_grid(bounds, nlat):
     grid_lon_corner = grid.get_coords(0, staggerloc=esmpy.StaggerLoc.CORNER)
     grid_lat_corner = grid.get_coords(1, staggerloc=esmpy.StaggerLoc.CORNER)
 
-    grid_lon_corner[:] = lon[:, None] - 0.5 * dlon
-    grid_lat_corner[:, :-1] = lat[None, :] - 0.5 * dlat
-    grid_lat_corner[:, -1] = 90.0
+    #grid_lon_corner[:] = lon[:, None] - 0.5 * dlon
+    #grid_lat_corner[:, :-1] = lat[None, :] - 0.5 * dlat
+    #grid_lat_corner[:, -1] = 90.0
 
     return grid, lat, lon
 
@@ -219,6 +219,7 @@ if __name__ == "__main__":
 
     ocn_mesh, ocn_mask, bounds = load_ocn_data(ocean_file)
     atm_grid, lats, lons = build_grid(bounds, nlat)
+
     ds = regrid(atm_grid, ocn_mesh, ocn_mask, nlat, nlon, lats, lons)
     ds.to_netcdf(out_fp)
   
