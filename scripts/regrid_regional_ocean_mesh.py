@@ -164,7 +164,8 @@ def regrid(atm_grid, ocn_mesh, ocn_mask, nlat, nlon, lats, lons):
       ocn_field, atm_field, 
       unmapped_action=esmpy.api.constants.UnmappedAction.IGNORE,
       regrid_method=esmpy.api.constants.RegridMethod.CONSERVE,
-      norm_type=esmpy.api.constants.NormType.DSTAREA, factors=True
+      norm_type=esmpy.api.constants.NormType.DSTAREA, 
+      actors=True
     )
 
     new_ocn_frac = atm_field.data.reshape((nlat, nlon))
