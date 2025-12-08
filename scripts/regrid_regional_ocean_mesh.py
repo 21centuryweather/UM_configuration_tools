@@ -147,6 +147,39 @@ def build_my_grid(bounds, resolution):
     return grid, lat, lon
 
 
+def build_grid_cons(bounds, nlat, nlon):
+    """
+    Build an esmpy (ESMF) grid object in memory using a modification 
+    of Kieran's method at https://gist.github.com/kieranricardo/eb98f76235255efff800d28c2442e5c3
+    """
+    
+    lon0, lon1 = bounds['lon_min'],bounds['lon_max']
+    lat0, lat1 = bounds['lat_min'],bounds['lat_max']
+
+    max_index = np.array([nlon, nlat])
+    grid = esmpy.Grid(max_index, 
+                    coord_sys=esmpy.CoordSys.SPH_DEG,
+                    staggerloc=[esmpy.StaggerLoc.CORNER])
+
+
+    # Get the coordinate arrays for the cell corners (vertices)
+    grid_lon_c = grid.get_coords(0, staggerloc=esmpy.StaggerLoc.CORNER)
+    grid_lat_c = grid.get_coords(1, staggerloc=esmpy.StaggerLoc.CORNER)
+
+    # Define the coordinates for the corners (vertices)
+    # The coordinate array size is now (nlat+1) x (nlog+1)
+    lat_corners = np.linspace(lat0, lat1, max_index[0] + 1)
+    lon_corners = np.linspace(lon0, lon1, max_index[1] + 1)
+
+    # Assign coordinates to the grid object
+    for j in range(max_index[0] + 1):
+        for i in range(max_index[1] + 1):
+            grid_lat_c[j, i] = lat_corners[j]
+            grid_lon_c[j, i] = lon_corners[i]
+
+    return grid, lat_corners, lon_corners
+
+
 def regrid(atm_grid, ocn_mesh, ocn_mask, nlat, nlon, lats, lons):
     """
     Use the ESMF regridder to grid the ocn_mask onto the 
@@ -165,7 +198,7 @@ def regrid(atm_grid, ocn_mesh, ocn_mask, nlat, nlon, lats, lons):
       unmapped_action=esmpy.api.constants.UnmappedAction.IGNORE,
       regrid_method=esmpy.api.constants.RegridMethod.CONSERVE,
       norm_type=esmpy.api.constants.NormType.DSTAREA, 
-      actors=True
+      factors=True
     )
 
     new_ocn_frac = atm_field.data.reshape((nlat, nlon))
@@ -200,6 +233,62 @@ def regrid(atm_grid, ocn_mesh, ocn_mask, nlat, nlon, lats, lons):
     return ds
 
 
+def regrid_cons(grid,ocn_mesh, nlat, nlon, lat_corners,lon_corners):
+    """
+    Regrid my conservative grid object
+    """
+    src_field_conserve = esmpy.Field(grid, name='source_data_conserve')
+
+    # Define the data on the centers of the cells (which is N_y x N_x)
+    src_lat_centers = (lat_corners[:-1] + lat_corners[1:]) / 2.0
+    src_lon_centers = (lon_corners[:-1] + lon_corners[1:]) / 2.0
+    src_field_conserve.data[:] = 100.0 + np.outer(src_lat_centers, np.cos(np.deg2rad(src_lon_centers)))
+
+    ocn_mesh, ocn_mask, bounds = load_ocn_data(ocean_file)
+
+    ocn_field = esmpy.Field(ocn_mesh, meshloc=esmpy.api.constants.MeshLoc.ELEMENT)
+    ocn_field.data[:] = ocn_mask
+
+    ocn_to_atm_cons = esmpy.api.regrid.Regrid(
+      ocn_field, src_field_conserve, 
+      unmapped_action=esmpy.api.constants.UnmappedAction.IGNORE,
+      regrid_method=esmpy.api.constants.RegridMethod.CONSERVE,
+      norm_type=esmpy.api.constants.NormType.DSTAREA, 
+      factors=True
+    )
+
+    new_ocn_frac = src_field_conserve.data.reshape((len(src_lat_centers),len(src_lon_centers)))
+
+    # Output to array
+    lat_coord = xr.DataArray(
+      dims=['lat'],
+      coords=dict(lat=src_lat_centers),
+      data=src_lat_centers,
+      attrs=dict(standard_name='latitude', units='degrees_north')
+    )
+
+    lon_coord = xr.DataArray(
+      dims=['lon'],
+      coords=dict(lon=src_lon_centers),
+      data=src_lon_centers,
+      attrs=dict(standard_name='longitude', units='degrees_east')
+     )
+
+    da = xr.DataArray(
+    data=new_ocn_frac,
+    dims=["lat", "lon"],
+    coords=dict(
+        lat=src_lat_centers,
+        lon=src_lon_centers,
+    ),
+    attrs=dict(um_stash_source='m01s00i505')
+    )
+
+    ds = xr.Dataset(dict(landfrac=da))
+
+    return ds
+
+    
 if __name__ == "__main__":
 
     parser = ArgumentParser()
@@ -231,3 +320,7 @@ if __name__ == "__main__":
 
     out_fp = 'dummy_paul.nc'
     my_ds.to_netcdf(out_fp)
+
+
+    atm_grid_cons, lats, lons = build_grid_cons(bounds, nlat, nlon)
+    con_ds = regrid_cons(atm_grid_cons, ocn_mesh, nlat, nlon, lats, lons)
