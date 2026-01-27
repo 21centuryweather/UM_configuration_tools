@@ -5,9 +5,10 @@ import numpy as np
 from argparse import ArgumentParser
 import os
 import sys
+import metpy
 
 if 'ESMFMKFILE' not in os.environ:
-    os.environ['ESMFMKFILE'] = '/opt/conda/analysis3-25.09/lib/esmf.mk'
+    os.environ['ESMFMKFILE'] = '/opt/conda/analysis3-25.10/lib/esmf.mk'
 
 import esmpy
 esmpy.Manager(debug=True)
@@ -40,6 +41,11 @@ def load_ocn_data(ocn_mesh_fp):
     bounds = get_bounds(mesh_ds)
 
     ocn_mask = mesh_ds.elementMask.data
+
+    # We need to logically invert this because MOM6 and the UM tread land/ocean 
+    # points differently. i.e. MOM6 has ocean points as '1' (True), the UM has them
+    # as '0' (False)
+    #ocn_mask = np.logical_not(ocn_mask).astype('int')
 
     ocn_mesh = esmpy.api.mesh.Mesh(
         filename=ocn_mesh_fp, 
@@ -261,30 +267,55 @@ def regrid_cons(grid,ocn_mesh, nlat, nlon, lat_corners,lon_corners):
 
     # Output to array
     lat_coord = xr.DataArray(
-      dims=['lat'],
-      coords=dict(lat=src_lat_centers),
+      dims=['latitude'],
+      coords=dict(latitude=src_lat_centers),
       data=src_lat_centers,
       attrs=dict(standard_name='latitude', units='degrees_north')
     )
 
     lon_coord = xr.DataArray(
-      dims=['lon'],
-      coords=dict(lon=src_lon_centers),
+      dims=['longitude'],
+      coords=dict(longitude=src_lon_centers),
       data=src_lon_centers,
       attrs=dict(standard_name='longitude', units='degrees_east')
      )
 
     da = xr.DataArray(
     data=new_ocn_frac,
-    dims=["lat", "lon"],
-    coords=dict(
-        lat=src_lat_centers,
-        lon=src_lon_centers,
-    ),
-    attrs=dict(um_stash_source='m01s00i505')
+    dims=["latitude", "longitude"],
+    attrs=dict(um_stash_source='m01s00i505',
+               grid_mapping='geog_cs',
+               earth_radius=6371229.0)
+    )
+    
+    # --- 2. Create the GeogCS Grid Mapping Variable ---
+    # This variable is crucial for defining the coordinate system (CS).
+    # It must be a scalar variable (value does not matter)
+    grid_mapping_var = xr.Variable(
+        dims=(),
+        data=0,
+        attrs={
+            # Standard CF attribute indicating a geographical coordinate system
+            'grid_mapping_name': 'latitude_longitude',
+
+            # CF attributes defining the spherical earth datum (radius)
+            # 6371229.0 m is the radius for Met Office standard sphere
+            'earth_radius': 6371229.0,
+        }
     )
 
-    ds = xr.Dataset(dict(landfrac=da))
+    ds = xr.Dataset(
+            data_vars=dict(
+                land_binary_mask=da,
+                geog_cs=grid_mapping_var
+                ),
+            coords=dict(
+                latitude=lat_coord,
+                longitude=lon_coord,
+            ),
+         attrs=dict(Conventions='CF-1.7')
+         )
+
 
     return ds
 
@@ -306,8 +337,8 @@ if __name__ == "__main__":
     atm_res = float(args.atm_res)
 
     out_fp = 'dummy_kieran.nc'
-    nlat=26
-    nlon=nlat
+    nlat=24
+    nlon=24
 
     ocn_mesh, ocn_mask, bounds = load_ocn_data(ocean_file)
     atm_grid, lats, lons = build_grid(bounds, nlat)
@@ -315,12 +346,15 @@ if __name__ == "__main__":
     ds.to_netcdf(out_fp)
 
     my_atm_grid, lats, lons = build_my_grid(bounds, atm_res)
+    nlon = 36
     my_ds = regrid(my_atm_grid, ocn_mesh, ocn_mask, nlat, nlon, lats,
     lons)
 
     out_fp = 'dummy_paul.nc'
     my_ds.to_netcdf(out_fp)
 
-
     atm_grid_cons, lats, lons = build_grid_cons(bounds, nlat, nlon)
     con_ds = regrid_cons(atm_grid_cons, ocn_mesh, nlat, nlon, lats, lons)
+
+    out_fp = 'dummy_cons.nc'
+    con_ds.to_netcdf(out_fp)

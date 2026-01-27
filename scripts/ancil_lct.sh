@@ -9,7 +9,10 @@ module use /g/data/access/ngm/modules
 module load cap/9.2
 #module load /g/data/access/ngm/modules/analysis3/23.07
 module use /g/data/xp65/public/modules
-module load conda/analysis3
+module load conda/analysis3-25.10
+set -x
+
+export HOME="/home/548/pag548"
 
 export CYLC_SUITE_RUN_DIR="/home/548/pag548/cylc-run/u-dg767"
 export CYLC_SUITE_DEF_PATH="${HOME}/cylc-run/u-dg767"
@@ -36,8 +39,10 @@ ANTS_MODULE="ants/ug-2.1.0"
 ROSE_DATA="$CYLC_SUITE_RUN_DIR/share/data"
 
 CONTRIB_APPS="$CYLC_SUITE_RUN_DIR/share/contrib_apps"
-PATH_PREPEND="$CYLC_SUITE_RUN_DIR/share/fcm_make_ants/build/bin"
-PYTHONPATH_PREPEND="$CYLC_SUITE_RUN_DIR/share/fcm_make_ants/build/lib"
+PATH_PREPEND="${HOME}/cylc-run/u-dq487/share/fcm_make_ants/build/bin"
+PYTHONPATH_PREPEND="${HOME}/cylc-run/u-dq487/share/fcm_make_ants/build/lib"
+#PATH_PREPEND=/g/data/gb02/public/ants_build/bin
+#PYTHONPATH_PREPEND=/g/data/gb02/public/ants_build/lib/
 ANCIL_MASTER="$CYLC_SUITE_RUN_DIR/share/data/etc/ancil_master_ants/"
 ANCIL_PREPROC_PATH="$ROSE_DATA/etc/ants_preproc"
 TRANSFORM_DIR="/g/data/access/TIDS/UM/ancil/data/transforms"
@@ -58,16 +63,22 @@ transformpath=${TRANSFORM_DIR}/cci2jules_ra1.json
 output_vegfrac=${ANCIL_TARGET_PATH}/qrparm.veg.frac_cci_pre_c4
 output_lsm=${ANCIL_TARGET_PATH}
 target_grid=${HORIZ_GRID}
+target_lsm="${HOME}/code/UM_config_tools/scripts/dummy_cons.nc"
 ANTS_CONFIG=${CYLC_SUITE_RUN_DIR}/work/1/Lismore_era5_${ROSE_TASK_APP}/rose-app-run.conf
 
-#~/cylc-run/u-dq487/share/fcm_make_ants/build/bin/ants-launch
+# To load the executable
+ANTS_LAUNCH="${HOME}/cylc-run/u-dq487/share/fcm_make_ants/build/bin/ants-launch"
+#ANTS_LAUNCH=/g/data/gb02/public/ants_build/bin/ants-launch
 
 export PATH=$PATH_PREPEND:$PATH
 export PYTHONPATH=$PYTHONPATH_PREPEND:$PYTHONPATH_PREPEND/ants
 
 echo "ANCIL_MASTER=$ANCIL_MASTER"
+echo "PYTHONPATH=$PYTHONPATH"
+# To launch the executable
+#echo "ants-launch ${CONTRIB_APPS}/LCT/ancil_lct.py ${source} --target-lsm ${target_lsm} --transform-path ${transformpath} -o ${output_vegfrac} --landseamask-output ${output_lsm} --ants-config ${ANTS_CONFIG}"
 
-#ants-launch ${CONTRIB_APPS}/LCT/ancil_lct.py ${source} --target-grid ${target_grid} --transform-path ${transformpath} -o ${output_vegfrac} --landseamask-output ${output_lsm} --ants-config ${ANTS_CONFIG}
+${ANTS_LAUNCH} ${HOME}/code/UM_config_tools/scripts/ancil_lct.py ${source} --target-lsm ${target_lsm} --transform-path ${transformpath} -o ${output_vegfrac}  --ants-config ${ANTS_CONFIG}
 
 # From rose-app-run.conf
 #[ants_decomposition]

@@ -49,7 +49,7 @@ import os
 import warnings
 
 import sys
-sys.path.append('/home/548/pag548/cylc-run/u-dq487/share/fcm_make_ants/build/lib')
+sys.path.insert(0,'/home/548/pag548/cylc-run/u-dq487/share/fcm_make_ants/build/lib/')
 
 import ants
 import ants.decomposition as decomp
@@ -270,8 +270,10 @@ def main(
 
     lct_cube, lsm_cubes = gen_lct(source, grid, src_trans, min_frac=min_frac)
 
+    landseamask_out_root=True
+    out_dir = '/home/548/pag548/cylc-run/u-dg767/share/data/ancils/Lismore/era5/'
     if landseamask_out_root:
-        ants.config.dirpath_writeable(landseamask_out_root)
+        ants.config.dirpath_writeable(out_dir)
         _prepare_mask_cube(lsm_cubes[0])
         land_mask = lsm_cubes[0]
         land_fraction = lsm_cubes[1]
@@ -288,7 +290,7 @@ def main(
             "qrparm.landfrac": (land_fraction, None),
         }
         for filename, (cube, fill_value) in cubes_to_save.items():
-            filepath = os.path.join(landseamask_out_root, filename)
+            filepath = os.path.join(out_dir, filename)
             save_ants(cube, filepath, fill_value, netcdf_only)
 
     if landseamask_in:
@@ -333,5 +335,7 @@ if __name__ == "__main__":
         args.target_lsm,
         args.landseamask_output_root,
         args.land_threshold,
-        args.netcdf_only,
+        args.netcdf_only
     )
+
+    
