@@ -239,7 +239,7 @@ def regrid(atm_grid, ocn_mesh, ocn_mask, nlat, nlon, lats, lons):
     return ds
 
 
-def regrid_cons(grid,ocn_mesh, nlat, nlon, lat_corners,lon_corners):
+def regrid_cons(grid,ocn_file,nlat, nlon, lat_corners,lon_corners):
     """
     Regrid my conservative grid object
     """
@@ -250,7 +250,10 @@ def regrid_cons(grid,ocn_mesh, nlat, nlon, lat_corners,lon_corners):
     src_lon_centers = (lon_corners[:-1] + lon_corners[1:]) / 2.0
     src_field_conserve.data[:] = 100.0 + np.outer(src_lat_centers, np.cos(np.deg2rad(src_lon_centers)))
 
-    ocn_mesh, ocn_mask, bounds = load_ocn_data(ocean_file)
+    ocn_mesh, ocn_mask, bounds = load_ocn_data(ocn_file)
+
+    # Invert the mask
+    ocn_mask = np.logical_not(ocn_mask).astype('int')
 
     ocn_field = esmpy.Field(ocn_mesh, meshloc=esmpy.api.constants.MeshLoc.ELEMENT)
     ocn_field.data[:] = ocn_mask
@@ -354,7 +357,7 @@ if __name__ == "__main__":
     my_ds.to_netcdf(out_fp)
 
     atm_grid_cons, lats, lons = build_grid_cons(bounds, nlat, nlon)
-    con_ds = regrid_cons(atm_grid_cons, ocn_mesh, nlat, nlon, lats, lons)
+    con_ds = regrid_cons(atm_grid_cons, ocean_file, nlat, nlon, lats, lons)
 
     out_fp = 'dummy_cons.nc'
     con_ds.to_netcdf(out_fp)
