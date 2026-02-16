@@ -49,7 +49,7 @@ import os
 import warnings
 
 import sys
-sys.path.insert(0,'/home/548/pag548/cylc-run/u-dq487/share/fcm_make_ants/build/lib/')
+sys.path.insert(0,'/home/548/pag548/cylc-run/rCM3-test-UM-ancil/share/fcm_make_ants/build/lib/')
 
 import ants
 import ants.decomposition as decomp
@@ -271,7 +271,7 @@ def main(
     lct_cube, lsm_cubes = gen_lct(source, grid, src_trans, min_frac=min_frac)
 
     landseamask_out_root=True
-    out_dir = '/home/548/pag548/cylc-run/u-dg767/share/data/ancils/Lismore/era5/'
+    out_dir = '/home/548/pag548/cylc-run/rCM3-test-UM-ancil/share/data/ancils/Lismore/d1100/'
     if landseamask_out_root:
         ants.config.dirpath_writeable(out_dir)
         _prepare_mask_cube(lsm_cubes[0])
