@@ -98,8 +98,8 @@ def build_grid_cons(bounds, res):
 
 
     # Get the coordinate arrays for the cell vertices 
-    grid_lon_c = grid.get_coords(0, staggerloc=esmpy.StaggerLoc.CORNER)
-    grid_lat_c = grid.get_coords(1, staggerloc=esmpy.StaggerLoc.CORNER)
+    grid_lon_v = grid.get_coords(0, staggerloc=esmpy.StaggerLoc.CORNER)
+    grid_lat_v = grid.get_coords(1, staggerloc=esmpy.StaggerLoc.CORNER)
 
     # Define the coordinates for the vertices 
     # The coordinate array size is now (nlat+1) x (nlog+1)
@@ -124,12 +124,12 @@ def regrid_cons(grid,
     """
     Regrid my conservative grid object
     """
-    src_field_conserve = esmpy.Field(grid, name='source_data_conserve')
+    dst_field_conserve = esmpy.Field(grid, name='source_data_conserve')
 
-    # Define the data on the centers of the cells (which is N_y x N_x)
-    src_lat_centers = (lat_vertices[:-1] + lat_vertices[1:]) / 2.0
-    src_lon_centers = (lon_vertices[:-1] + lon_vertices[1:]) / 2.0
-    src_field_conserve.data[:] = 100.0 + np.outer(src_lat_centers, np.cos(np.deg2rad(src_lon_centers)))
+    # Define the output data on the edges of the cells (which is N_y x N_x)
+    dst_lon_edges = ocn_mesh.coords[0][0]
+    dst_lat_edges = ocn_mesh.coords[0][1]
+    dst_field_conserve.data[:] = 100.0 + np.outer(src_lat_centers, np.cos(np.deg2rad(src_lon_centers)))
 
     # Invert the mask
     ocn_mask = np.logical_not(ocn_mask).astype('int')
@@ -138,7 +138,8 @@ def regrid_cons(grid,
     ocn_field.data[:] = ocn_mask
 
     ocn_to_atm_cons = esmpy.api.regrid.Regrid(
-      ocn_field, src_field_conserve, 
+      ocn_field, 
+      src_field_conserve, 
       unmapped_action=esmpy.api.constants.UnmappedAction.IGNORE,
       regrid_method=esmpy.api.constants.RegridMethod.CONSERVE,
       norm_type=esmpy.api.constants.NormType.DSTAREA, 
