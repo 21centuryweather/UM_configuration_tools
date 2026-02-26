@@ -5,7 +5,7 @@ import sys
 import matplotlib.pyplot as plt
 
 if 'ESMFMKFILE' not in os.environ:
-    os.environ['ESMFMKFILE'] = '/opt/conda/analysis3-25.09/lib/esmf.mk'
+    os.environ['ESMFMKFILE'] = '/opt/conda/analysis3-25.12/lib/esmf.mk'
 
 import esmpy
 # Initialize ESMF Manager (assuming this is done)

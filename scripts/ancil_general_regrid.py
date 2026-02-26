@@ -36,6 +36,65 @@ import ants.decomposition as decomp
 import ants.io.save as save
 import ants.utils
 from ants.utils.cube import create_time_constrained_cubes
+from iris.fileformats._ff import FF2PP
+import numpy as np
+
+def replace_lat_lon(cube,filename):
+    """
+    Replace the 32-bit lat and lon points of input cube
+    with 64 bit points constructed from the PP field 
+    of the input cube
+    """
+
+    field, = FF2PP(filename, read_data=False)
+
+    bdx = field.bdx
+    bzx = field.bzx
+    lbnpt= field.lbnpt
+
+    bdy = field.bdy
+    bzy = field.bzy
+    lbrow = field.lbrow
+
+    lon_points = regular_points(bzx, bdx, lbnpt)
+    lat_points = regular_points(bzy, bdy, lbrow)
+
+    cube.coord('longitude').points = lon_points
+    cube.coord('latitude').points = lat_points
+
+    return cube
+
+
+def regular_points(zeroth, step, count):
+    """Make an array of regular points.
+
+    Create an array of `count` points from `zeroth` + `step`, adding `step` each
+    time. In float32 if this gives a sufficiently regular array (tested with
+    points_step) and float64 if not.
+
+    Parameters
+    ----------
+    zeroth : number
+        The value *prior* to the first point value.
+    step : number
+        The numeric difference between successive point values.
+    count : number
+        The number of point values.
+
+    Notes
+    -----
+    This function does maintain laziness when called; it doesn't realise data.
+    See more at :doc:`/userguide/real_and_lazy_data`.
+    """
+
+    def make_steps(dtype: np.dtype):
+        start = np.add(zeroth, step, dtype=dtype)
+        steps = np.multiply(step, np.arange(count), dtype=dtype)
+        return np.add(start, steps, dtype=dtype)
+
+    points = make_steps(np.float64)
+    
+    return points
 
 
 def load_data(
@@ -55,6 +114,9 @@ def load_data(
         target_cube = ants.io.load.load_landsea_mask(
             target_landseamask, land_fraction_threshold
         )
+
+    target_cube = replace_lat_lon(target_cube, target_landseamask)
+
     return source_cubes, target_cube
 
 
