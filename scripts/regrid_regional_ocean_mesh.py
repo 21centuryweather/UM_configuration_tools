@@ -85,6 +85,10 @@ def build_grid_cons(bounds, res):
     # Let's enforce the distance b/w the bounds is a multiple of the input resolution
     # to prevent rounding errors
 
+    # TO DO - we need some robust checking here to ensure
+    # the grid bounds are a multiple of the required
+    # resolution
+
     delta_lat = np.ptp([bounds['lat_min'],bounds['lat_max']])
     delta_lon = np.ptp([bounds['lat_min'],bounds['lat_max']])
 
@@ -97,7 +101,7 @@ def build_grid_cons(bounds, res):
                     staggerloc=[esmpy.StaggerLoc.CORNER])
 
 
-    # Get the coordinate arrays for the cell vertices 
+    # Get the coordinate arrays for the cell vertices (or corners)
     grid_lon_v = grid.get_coords(0, staggerloc=esmpy.StaggerLoc.CORNER)
     grid_lat_v = grid.get_coords(1, staggerloc=esmpy.StaggerLoc.CORNER)
 
@@ -109,8 +113,25 @@ def build_grid_cons(bounds, res):
     # Assign coordinates to the grid object
     for j in range(max_index[0] + 1):
         for i in range(max_index[1] + 1):
-            grid_lat_c[j, i] = lat_vertices[j]
-            grid_lon_c[j, i] = lon_vertices[i]
+            grid_lat_v[j, i] = lat_vertices[j]
+            grid_lon_v[j, i] = lon_vertices[i]
+
+    # Let's create a dual grid where we create add the 
+    # co-ordinates of the grid centers
+    grid.add_coords(staggerloc=esmpy.StaggerLoc.CENTER)
+
+    grid_lon_c = grid.get_coords(coord_dim=0, staggerloc=esmpy.StaggerLoc.CENTER)
+    grid_lat_c = grid.get_coords(coord_dim=1, staggerloc=esmpy.StaggerLoc.CENTER)
+
+    # Define the coordinates for the centers
+    lat_centres = np.linspace(lat0+res/2, lat1-res/2, max_index[0])
+    lon_centres = np.linspace(lon0+res/2, lon1-res/2, max_index[1])
+
+    # Assign coordinates to the grid object
+    for j in range(max_index[0]):
+        for i in range(max_index[1]):
+            grid_lat_c[j, i] = lat_centres[j]
+            grid_lon_c[j, i] = lon_centres[i]
 
     return grid, lat_vertices, lon_vertices
 
@@ -127,8 +148,8 @@ def regrid_cons(grid,
     dst_field_conserve = esmpy.Field(grid, name='source_data_conserve')
 
     # Define the output data on the edges of the cells (which is N_y x N_x)
-    dst_lon_edges = ocn_mesh.coords[0][0]
-    dst_lat_edges = ocn_mesh.coords[0][1]
+    dst_lon_points = ocn_mesh.coords[0][0]
+    dst_lat_points = ocn_mesh.coords[0][1]
     dst_field_conserve.data[:] = 100.0 + np.outer(src_lat_centers, np.cos(np.deg2rad(src_lon_centers)))
 
     # Invert the mask
