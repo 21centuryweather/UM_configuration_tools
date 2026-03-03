@@ -13,6 +13,11 @@ if 'esmpyMKFILE' not in os.environ:
 import esmpy
 esmpy.Manager(debug=True)
 
+GRID_STAGGER_DICT = { 0 : CENTER,
+                      1 : EDGE1,
+                      2 : EDGE2,
+                      3 : CORNER}
+
 def add_options(parser):
     """
     Process the command-line arguments
@@ -29,35 +34,48 @@ def add_options(parser):
         help="The desired atmospheric resolution in degrees, e.g. 0.025")
 
 
-def create_center_based_grid(src_grid):
-    # 1. Extract the center coordinates from the source
-    # These will have shape (ni, nj)
-    src_lon_centers = src_grid.get_coords(coord_dim=0, staggerloc=esmpy.StaggerLoc.CENTER)
-    src_lat_centers = src_grid.get_coords(coord_dim=1, staggerloc=esmpy.StaggerLoc.CENTER)
-    
-    # 2. Define dimensions for the new grid
-    # To treat centers as corners, the new grid 'cells' are the gaps between centers
-    ni, nj = src_lon_centers.shape
-    new_grid_shape = np.array([ni - 1, nj - 1])
-    
-    # 3. Create the new Grid object
-    # We use the same coordinate system (usually Spherical)
-    new_grid = esmpy.Grid(max_index=new_grid_shape, 
-                         coord_sys=src_grid.coord_sys, 
-                         staggerloc=[esmpy.StaggerLoc.CENTER, esmpy.StaggerLoc.CORNER])
-    
-    # 4. Assign the original centers to the new grid's CORNERS
-    new_lon_corners = new_grid.get_coords(coord_dim=0, staggerloc=esmpy.StaggerLoc.CORNER)
-    new_lat_corners = new_grid.get_coords(coord_dim=1, staggerloc=esmpy.StaggerLoc.CORNER)
-    
-    new_lon_corners[...] = src_lon_centers
-    new_lat_corners[...] = src_lat_centers
-    
-    # 5. (Optional) Calculate new centers for the new grid
-    # Often done via simple averaging of the new corners
-    # new_grid.add_coords(staggerloc=esmpy.StaggerLoc.CENTER)
-    
-    return new_grid
+def load_ocn_data(ocn_mesh_fp):
+    """
+    Load the rMOM6 ocean mesh file and return at ESMPY mesh object
+    """
+
+    mesh_ds = xr.load_dataset(
+        ocn_mesh_fp
+    )
+
+    bounds = get_bounds(mesh_ds)
+
+    ocn_mask = mesh_ds.elementMask.data
+
+    # We need to logically invert this because MOM6 and the UM tread land/ocean 
+    # points differently. i.e. MOM6 has ocean points as '1' (True), the UM has them
+    # as '0' (False)
+    #ocn_mask = np.logical_not(ocn_mask).astype('int')
+
+    ocn_mesh = esmpy.api.mesh.Mesh(
+        filename=ocn_mesh_fp, 
+        filetype=esmpy.api.constants.FileFormat.ESMFMESH
+    )
+
+    return ocn_mesh, ocn_mask, bounds
+
+
+def get_bounds(ocn_ds):
+    """
+    Return the bounds of the the ocean mesh dataset
+    """
+    coords = ocn_ds.nodeCoords.data
+
+    # Find the min and max 
+    lons = coords[:,0]
+    lats = coords[:,1]
+
+    bounds = { 'lat_min' : lats.min(), 
+               'lat_max' : lats.max(), 
+               'lon_min' : lons.min(), 
+               'lon_max' : lons.max() }
+
+    return bounds
 
 
 def build_grid_cons(bounds, res):
@@ -107,7 +125,7 @@ def build_grid_cons(bounds, res):
     # co-ordinates of the grid centers
     grid.add_coords(staggerloc=esmpy.StaggerLoc.CENTER)
 
-    grid_lon_v = grid.get_coords(coord_dim=0, staggerloc=esmpy.StaggerLoc.CENTER)
+    grid_lon_c = grid.get_coords(coord_dim=0, staggerloc=esmpy.StaggerLoc.CENTER)
     grid_lat_c = grid.get_coords(coord_dim=1, staggerloc=esmpy.StaggerLoc.CENTER)
 
     # Define the coordinates for the centers
@@ -121,6 +139,23 @@ def build_grid_cons(bounds, res):
             grid_lon_c[j, i] = lon_centres[i]
 
     return grid, lat_vertices, lon_vertices
+
+
+def output_gridded_field(field):
+    """
+    Outputs a gridded ESMF field object to netCDF
+    """
+    # Get data shape
+    shape = field.data.shape
+
+    # Get the available grid staggers. This returns a boolean list of length 4
+    # The entries correspond to 
+    # [ CENTER, EDGE1, EDGE2, CORNER ]
+    # See https://earthsystemmodeling.org/esmpy_doc/release/ESMF_8_0_1/html/StaggerLoc.html#ESMF.api.constants.StaggerLoc
+
+    stagger = field.grid.staggerloc
+
+
 
 
 if __name__ == "__main__":
@@ -139,7 +174,7 @@ if __name__ == "__main__":
     MOM6_mesh_file = args.mesh_file
     atm_res = float(args.atm_res)
 
-    MOM6_mesh, MOM6_mask, bounds = load_ocn_data(ocean_file)
+    MOM6_mesh, MOM6_mask, bounds = load_ocn_data(MOM6_mesh_file)
 
     # Create the MOM6 mask field
     MOM6_field = esmpy.Field(MOM6_mesh,meshloc=esmpy.MeshLoc.ELEMENT)
@@ -166,3 +201,15 @@ if __name__ == "__main__":
     )
 
     # Now we interpolate the UM field (defined at the grid centre) back to the vertices
+    UM_field_v = esmpy.Field(UM_grid,staggerloc=esmpy.StaggerLoc.CORNER)
+    
+    UM_c_to_v = esmpy.api.regrid.Regrid(
+      UM_field, 
+      UM_field_v, 
+      unmapped_action=esmpy.api.constants.UnmappedAction.IGNORE,
+      regrid_method=esmpy.api.constants.RegridMethod.BILINEAR,
+      norm_type=esmpy.api.constants.NormType.DSTAREA, 
+      factors=True
+    )
+
+    # To do -output both for testing sake
