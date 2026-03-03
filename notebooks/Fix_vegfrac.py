@@ -6,15 +6,22 @@
 import sys
 import ants
 import xarray as xr
+import argparse
 
 stashid = {'vegfrac'  : 'm01s00i216'}
 
-source_fpath='/scratch/gb02/sl5165/u-dr651/n320e/mom025_20250315/cable_veg/cable_vegfrac_1850.anc'
-target_fpath = '/scratch/gb02/pc2687/cable_vegfrac_1850.anc'
+parser = argparse.ArgumentParser(description='Fix vegetation fraction ancillary')
+parser.add_argument('source_fpath', help='Path to source vegetation fraction file')
+parser.add_argument('target_fpath', help='Path to target output file')
+parser.add_argument('lnd_mask_fpath', help='Path to land sea mask file')
+args = parser.parse_args()
+
+source_fpath = args.source_fpath
+target_fpath = args.target_fpath
+lnd_mask = ants.load_cube(args.lnd_mask_fpath)
 
 cube = ants.load_cube(source_fpath, constraint=stashid['vegfrac'])
 cube_updated = cube.copy()
-lnd_mask = ants.load_cube('/g/data/gb02/public/AM3/ancils/u-dj813_om3-025deg/n320e/mom025_20250315/land_sea_mask/etop01/qrparm.mask')
 
 ants.analysis.cover_mapping.normalise_fractions(cube_updated)
 
