@@ -5,29 +5,28 @@ import numpy as np
 from argparse import ArgumentParser
 import os
 import sys
-import metpy
-
-if 'esmpyMKFILE' not in os.environ:
-    os.environ['esmpyMKFILE'] = '/opt/conda/analysis3-25.10/lib/esmpy.mk'
-
 import esmpy
 esmpy.Manager(debug=True)
 
-GRID_STAGGER_DICT = { 0 : CENTER,
-                      1 : EDGE1,
-                      2 : EDGE2,
-                      3 : CORNER}
+GRID_STAGGER_DICT = { 0 : 'CENTER',
+                      1 : 'EDGE1',
+                      2 : 'EDGE2',
+                      3 : 'CORNER'}
 
 def add_options(parser):
     """
     Process the command-line arguments
     """
-    parser.description = 'Regrid a MOM6 ocean mesh onto a regular grid with the same bounds.\n The user specifies the output resolution'
+    parser.description = 'Regrid a MOM6 ocean mesh onto a regular grid with the same bounds.\n The user specifies the output resolution and output file'
 
-    parser.add_argument('-f','--input-ocean-mesh-file', 
+    parser.add_argument('-i','--input-ocean-mesh-file', 
         dest='mesh_file', 
         type=str, 
         help="The rMOM6 esmpy mesh file, e.g. access-rom3-esmpymesh.nc")
+    parser.add_argument('-o','--output-land-sea-mask-file', 
+        dest='outfile', 
+        type=str, 
+        help="The output land-sea mask at the desired resolutio, e.g. target_mask.nc")
     parser.add_argument('-r','--resolution', 
         dest='atm_res', 
         type=str, 
@@ -78,7 +77,8 @@ def get_bounds(ocn_ds):
     return bounds
 
 
-def build_grid_cons(bounds, res):
+def build_grid_cons(bounds, 
+                    res):
     """
     Build an esmpy (ESMF) grid object in memory using a modification 
     of Kieran's method at https://gist.github.com/kieranricardo/eb98f76235255efff800d28c2442e5c3
@@ -141,9 +141,71 @@ def build_grid_cons(bounds, res):
     return grid, lat_vertices, lon_vertices
 
 
-def output_gridded_field(field):
+def create_dataarray(field,
+                     index):
     """
-    Outputs a gridded ESMF field object to netCDF
+    Create a datarray for a specified field
+    """
+
+    coords = field.grid.coords
+    lons = coords[index][0]
+    lats = coords[index][1]
+
+    data = field.data
+
+    # Output to DataArray
+    lat_coord = xr.DataArray(
+      dims=['latitude'],
+      coords=dict(latitude=lats[:,0]),
+      data=lats[:,0],
+      attrs=dict(standard_name='latitude', units='degrees_north')
+    )
+
+    lon_coord = xr.DataArray(
+      dims=['longitude'],
+      coords=dict(longitude=lons[0]),
+      data=lons[0],
+      attrs=dict(standard_name='longitude', units='degrees_east')
+     )
+
+    da = xr.DataArray(
+    data=data,
+    dims=["latitude", "longitude"],
+    coords=dict(latitude=lat_coord,
+                longitude=lon_coord),
+    attrs=dict(um_stash_source='m01s00i505',
+               grid_mapping='geog_cs',
+               earth_radius=6371229.0)
+    )
+
+    return da
+
+
+def create_grid_mapping_variable():
+    """
+    Defines the co-ordinate system required for UM ancillary
+    generation
+    """
+    grid_mapping_var = xr.Variable(
+        dims=(),
+        data=0,
+        attrs={
+            # Standard CF attribute indicating a geographical coordinate system
+            'grid_mapping_name': 'latitude_longitude',
+
+            # CF attributes defining the spherical earth datum (radius)
+            # 6371229.0 m is the radius for Met Office standard sphere
+            'earth_radius': 6371229.0,
+        }
+    )
+
+    return grid_mapping_var
+
+
+def convert_gridded_field(field,
+                         outfilename):
+    """
+    Outputs a gridded ESMF 2-Dfield object to xarray dataset
     """
     # Get data shape
     shape = field.data.shape
@@ -154,8 +216,36 @@ def output_gridded_field(field):
     # See https://earthsystemmodeling.org/esmpy_doc/release/ESMF_8_0_1/html/StaggerLoc.html#ESMF.api.constants.StaggerLoc
 
     stagger = field.grid.staggerloc
+    coords = field.grid.coords
+    for i,stag in enumerate(stagger):
 
+        if stag:
+            lons = coords[i][0]
+            lats = coords[i][1]
 
+            if (lons.shape == shape) and (lats.shape == shape):
+                print (f"INFO : Field has data corresponding to {GRID_STAGGER_DICT[i]}")
+
+                field_da = create_dataarray(field,
+                                            i)
+                grid_var = create_grid_mapping_variable()
+
+                field_ds = xr.Dataset(
+                    data_vars=dict(
+                    land_binary_mask=field_da,
+                    geog_cs=grid_var
+                    ),
+                    coords=dict(
+                    latitude=field_da.latitude,
+                    longitude=field_da.longitude,
+                    ),
+                    attrs=dict(Conventions='CF-1.7')
+                    )
+
+                field_ds.to_netcdf(outfilename)
+                print(f"INFO : Writing {outfilename}")
+    
+    return field_ds
 
 
 if __name__ == "__main__":
@@ -172,8 +262,11 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     MOM6_mesh_file = args.mesh_file
+    target_mask_file = args.outfile
     atm_res = float(args.atm_res)
 
+    #Load the Mesh file
+    print(f"INFO : Opening {MOM6_mesh_file}")
     MOM6_mesh, MOM6_mask, bounds = load_ocn_data(MOM6_mesh_file)
 
     # Create the MOM6 mask field
@@ -186,10 +279,11 @@ if __name__ == "__main__":
     UM_grid, lats, lons = build_grid_cons(bounds, 
                                           atm_res)
 
-    # Create a UM dummy field
+    # Create a UM dummy field based on the UM corners, defined at 
+    # the grid centres
     UM_field = esmpy.Field(UM_grid,staggerloc=esmpy.StaggerLoc.CENTER)
 
-    # To use the conservative regridder, we are going to define a dual grid composted of the UM grid's cell centres
+    # To use the conservative regridder, we are going to define a dual grid composed of the UM grid's cell centres
 
     MOM6_to_UM_cons = esmpy.api.regrid.Regrid(
       MOM6_field, 
@@ -213,3 +307,8 @@ if __name__ == "__main__":
     )
 
     # To do -output both for testing sake
+    ds_c = convert_gridded_field(UM_field,
+                        'target_centres.nc')
+
+    ds_v = convert_gridded_field(UM_field_v,
+                        'target_corners.nc')

@@ -7,8 +7,8 @@ import os
 import sys
 import metpy
 
-if 'ESMFMKFILE' not in os.environ:
-    os.environ['ESMFMKFILE'] = '/opt/conda/analysis3-25.10/lib/esmf.mk'
+#if 'ESMFMKFILE' not in os.environ:
+#    os.environ['ESMFMKFILE'] = '/opt/conda/analysis3-25.10/lib/esmf.mk'
 
 import esmpy
 esmpy.Manager(debug=True)
