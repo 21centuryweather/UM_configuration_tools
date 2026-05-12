@@ -49,7 +49,7 @@ import os
 import warnings
 
 import sys
-sys.path.insert(0,'/home/548/pag548/cylc-run/rCM3-test-UM-ancil/share/fcm_make_ants/build/lib/')
+sys.path.insert(0,'/home/548/pag548/cylc-run/rCM3-ancil-suite/share/fcm_make_ants/build/lib/')
 
 import ants
 import ants.decomposition as decomp
@@ -190,15 +190,20 @@ def load_data(
 def gen_lct(src_cube, grid_cube, transform, min_frac=0.5):
     operation = ants.analysis.SCTTransformer(transform)
     lct_cube = decomp.decompose(operation, src_cube, grid_cube)
+
     lct_cube.units = "1"
     lct_cube.attributes["STASH"] = iris.fileformats.pp.STASH.from_msi("m01s00i216")
     lct_cube.rename("vegetation_area_fraction")
+
+    iris.save(lct_cube,'lct_cube_init.nc')
 
     # Any masked data is nan in the land cover type fraction as the ocean level
     # is used to derive the landsea mask.
     if np.ma.is_masked(lct_cube.data):
         lct_cube.data[lct_cube.data.mask] = np.nan
         lct_cube.data = lct_cube.data.data
+
+    iris.save(lct_cube,'lct_cube_mask.nc')
 
     # Derive the land area fraction before we remove the ocean.
     # This field is not currently used directly by the model.
@@ -211,11 +216,15 @@ def gen_lct(src_cube, grid_cube, transform, min_frac=0.5):
     land_fraction_cube.rename("land_area_fraction")
 
     lct.set_whole_fraction_ice(lct_cube)
+    iris.save(lct_cube,'lct_cube_whole_fraction.nc')
+
     lct.remove_non_glacial_ice(lct_cube)
+    iris.save(lct_cube,'lct_cube_non_glacial.nc')
     # Exclude the ocean level - All land fractions must add up to 1 which means
     # that points must be 100% land or 100% ocean.  The array is masked as a
     # result (representing this ocean).
     lct_cube, land_mask_cube = lct.remove_ocean_level(lct_cube, min_frac=min_frac)
+    iris.save(lct_cube,'lct_cube_remove_ocean_level.nc')
 
     # Extract landsea mask.
     land_mask_cube = lct_cube.slices_over("pseudo_level").next()
@@ -225,6 +234,9 @@ def gen_lct(src_cube, grid_cube, transform, min_frac=0.5):
     land_mask_cube.data = np.logical_not(land_mask_cube.data.mask).astype(
         "int8", copy=False
     )
+
+    iris.save(land_mask_cube,'land_mask_cube.nc')
+
     nan_values = np.isnan(lct_cube.data[0])
     # Inherit unknown values from the lct in the form of a mask.
     if nan_values.any():
@@ -237,6 +249,7 @@ def gen_lct(src_cube, grid_cube, transform, min_frac=0.5):
 
     _prepare_mask_cube(land_mask_cube)
     land_mask_cube.rename("land_binary_mask")
+    iris.save(land_mask_cube,'land_mask_cube_binary.nc')
     lsm_cubes = iris.cube.CubeList([land_mask_cube, land_fraction_cube])
     return lct_cube, lsm_cubes
 
@@ -271,7 +284,7 @@ def main(
     lct_cube, lsm_cubes = gen_lct(source, grid, src_trans, min_frac=min_frac)
 
     landseamask_out_root=True
-    out_dir = '/home/548/pag548/cylc-run/rCM3-test-UM-ancil/share/data/ancils/Lismore/d1100/'
+    out_dir = '/home/548/pag548/cylc-run/rCM3-ancil-suite/share/data/ancils/Lismore/d1100/'
     if landseamask_out_root:
         ants.config.dirpath_writeable(out_dir)
         _prepare_mask_cube(lsm_cubes[0])
