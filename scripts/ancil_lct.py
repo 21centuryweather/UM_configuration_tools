@@ -298,7 +298,8 @@ def main(
 
         cubes_to_save = {
             # "filename": (cube, fill_value),
-            "qrparm.mask": (land_mask, -1),
+            #"qrparm.mask": (land_mask, -1),
+            "qrparm.mask": (grid, -1),
             "qrparm.mask_sea": (ocean_mask, -1),
             "qrparm.landfrac": (land_fraction, None),
         }
@@ -309,6 +310,7 @@ def main(
     if landseamask_in:
         ants.analysis.make_consistent_with_lsm(lct_cube, grid, True)
     save_ants(lct_cube, out_filepath, None, netcdf_only)
+
     return lct_cube, lsm_cubes[0], lsm_cubes[1]
 
 
