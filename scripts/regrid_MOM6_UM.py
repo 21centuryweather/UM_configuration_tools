@@ -181,9 +181,11 @@ def create_dataarray(field,
     dims=["latitude", "longitude"],
     coords=dict(latitude=lat_coord,
                 longitude=lon_coord),
-    attrs=dict(um_stash_source='m01s00i505',
+ #   attrs=dict(um_stash_source='m01s00i505',
+    attrs=dict(um_stash_source='m01s00i030',
                grid_mapping='geog_cs',
-               earth_radius=6371229.0)
+               earth_radius=6371229.0,
+               units='1')
     )
 
     return da
